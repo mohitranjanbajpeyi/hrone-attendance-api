@@ -1,0 +1,26 @@
+# REVIEW.md
+
+| # | Where | What is wrong | How to notice | Fix |
+|---:|---|---|---|---|
+| 1 | `compute_late_minutes` | It checks whether the floored minute count is greater than 10, so a punch at 09:40:01 for a 09:30 shift is treated as on time. | Test 09:40:01 and 10:15:59. | Compare elapsed seconds with 600 first, then floor elapsed seconds to minutes. |
+| 2 | `compute_late_minutes` / `punch_in` | The helper replaces hours on the supplied datetime without first converting the punch instant to IST. | Run with a UTC-aware datetime or a server configured outside IST. | Convert instants to UTC/IST explicitly and build shift instants from the attendance date. |
+| 3 | `punch_in` | `datetime.fromtimestamp` interprets the timestamp in the server's local timezone and the code passes milliseconds through a float conversion. | Change the server timezone and punch around IST midnight. | Convert epoch milliseconds with an explicit UTC timezone, truncate to whole seconds, then derive the IST date. |
+| 4 | `compute_late_minutes` / `punch_in` | It does not implement the overnight attendance-date exception. | Punch into a 22:00–06:00 shift at 05:30 IST. | Assign early-morning punches before `shift_end` to the previous shift date. |
+| 5 | `compute_work_hours` | Built-in `round` uses ties-to-even and binary floats; the contract requires decimal half-up rounding. | Test a duration of 1 hour and 18 seconds. | Use `Decimal` and `ROUND_HALF_UP` after truncating instants to seconds. |
+| 6 | `compute_overtime` | It counts any positive overtime, although the rule requires at least 30 minutes. | A punch-out at 18:35 for an 18:30 shift returns 5 instead of 0. | Apply the 30-minute threshold before flooring to whole minutes. |
+| 7 | `compute_overtime` | It places an overnight shift's end on the attendance date instead of the following day. | Punch out at 06:30 for a 22:00–06:00 shift. | Advance the shift-end date when `shift_end <= shift_start`. |
+| 8 | `create_employee` | A check-then-insert can create duplicate employee codes under concurrent requests. | Send simultaneous POST requests with one `emp_code`. | Enforce uniqueness in MongoDB and turn `DuplicateKeyError` into 409. |
+| 9 | `create_employee` | `created_at` is naive local time and is returned as a datetime rather than epoch milliseconds. | Inspect the response with a non-UTC server. | Store a UTC BSON datetime and serialize instants as integer epoch milliseconds. |
+| 10 | `EmployeeIn` | It does not validate employee-code/email formats, shift-time formats, dates, or equal start/end times. | Submit `emp_code: "abc"`, `shift_start: "9am"`, or identical shifts. | Add request-model constraints and a cross-field shift validation. |
+| 11 | `list_employees` | `total` ignores the department filter, records are not sorted, and `skip = page * page_size` skips the first page. | Filter a department and request pages 1 and 2. | Count the same query, sort by `emp_code`, and skip `(page - 1) * page_size`. |
+| 12 | `health` | It reports ready without checking MongoDB. | Stop MongoDB and call `/health`. | Ping MongoDB and return 503 when it cannot be reached. |
+| 13 | `punch_in` | An unknown employee is dereferenced and can produce a 500; arbitrary status strings are accepted. | Punch in with a nonexistent code or status `HOLIDAY`. | Return 404 for unknown employees and validate the three permitted punch-in statuses. |
+| 14 | `punch_in` | The duplicate check is not safe under parallel requests, and no unique attendance key is created. | Send two concurrent punch-ins for the same employee/date. | Add a unique `(emp_code, date)` index and rely on it for conflict handling. |
+| 15 | `list_attendance` | It reads and sorts every matching document in Python, which does not scale to the required dataset. | Run against 100,000 records and inspect memory/time. | Apply filtering, sort, count, skip, and limit in MongoDB with supporting indexes. |
+| 16 | `list_attendance` | Date bounds are not validated; reversed ranges silently return an empty set. | Pass `date_from` after `date_to`. | Parse dates as calendar dates and return 422 for a reversed range. |
+| 17 | `list_attendance` / `punch_in` | Attendance responses expose an `id` on punch-in and raw datetime values, and do not fill missing legacy fields. | Compare output to `AttendanceRecord` or load the legacy sample. | Omit MongoDB identifiers, convert all nested instants to epoch milliseconds, and supply legacy defaults. |
+| 18 | Index setup / missing endpoints | No indexes are created, and punch-out, regularization, analytics, and explain endpoints are absent. | Start against an empty-index database and call each documented route. | Create idempotent indexes at startup and implement all routes with atomic writes or MongoDB pipelines. |
+
+### Checked and retained
+
+The starter's default punch-in status of `PRESENT` is correct. The use of `emp_code` plus attendance `date` as the natural key is also correct; MongoDB's `_id` should remain internal. The attendance list's intended ordering (date descending, then employee code ascending) matches the contract, but the Python-side sort was replaced for scale and index use.
