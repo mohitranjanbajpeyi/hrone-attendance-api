@@ -1,19 +1,22 @@
 # Employee Attendance & Analytics API
 
-FastAPI and MongoDB service for employee records, attendance punch-in/out, manual corrections with audit history, and analytics. See `app/main.py`, `REVIEW.md`, and `DECISIONS.md`.
+FastAPI service backed by MongoDB. All application endpoints are implemented in `app/main.py`; database indexes are created at startup.
 
-Requirements: Python 3.11+, MongoDB 6.0+.
+## Run locally
+
+Requires Python 3.11+ and MongoDB 6.0+.
 
 ```bash
 python -m venv .venv
-# Activate the environment
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-# Set MONGO_URI and MONGO_DB as environment variables
+export MONGO_URI='mongodb://localhost:27017'
+export MONGO_DB='attendance_db'
 uvicorn app.main:app --port 8000
 ```
 
-API docs: http://127.0.0.1:8000/docs
+On Windows PowerShell, use `$env:MONGO_URI="mongodb://localhost:27017"` and `$env:MONGO_DB="attendance_db"` instead of `export`.
 
-Focused tests: `python -m unittest discover -s tests`
+`GET /health` pings MongoDB. Request/response instants use epoch milliseconds; stored BSON datetimes are UTC. Analytics are calculated in MongoDB aggregation pipelines. The service expects the `employees` and `attendance_logs` collections described in the assignment data model.
 
-Full endpoint and explain-plan checks require a running MongoDB instance with the assignment's sample data loaded. No secrets or `.env` files belong in the repository.
+Run the focused rule tests with `python -m unittest discover -s tests`. Full endpoint and explain-plan checks require a running MongoDB instance with the assignment data loaded.
